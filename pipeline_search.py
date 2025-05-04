@@ -39,7 +39,7 @@ def main():
     start_time = time.time()  
     args = parse_args()
 
-    #model = ga.xgboost_train()
+    model = ga.xgboost_train()
 
     # module_name = args.module_name
     module_name = "c17"
@@ -97,7 +97,7 @@ def main():
     
     psearch.stage_assignment_align_with_old(netlist,3)
     origin_stage_matrix = ga.initialize_partition(netlist, real_and_nodes_sorted, lo_nodes, po_nodes)
-    origin_fit = ga.fitness_function(origin_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping)
+    origin_fit = ga.fitness_function(origin_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping,model)
     print("origin_stage_matrix:",origin_stage_matrix)
     print("origin_fitness:",origin_fit)
     
@@ -106,7 +106,7 @@ def main():
 
     best_solution, best_solution_fitness = ga.genetic_algorithm(new_netlist,virtual_and_nodes_sorted, lo_nodes, po_nodes, li_nodes, virtual_longest_paths,virtual_lo_mapping,
                                                              virtual_po_mapping,stage_matrix,virtual_li_lo_mapping,
-                                                             num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size)
+                                                             num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size, model)
     print("best_solution:", best_solution)
     print("best_solution_fitness:", best_solution_fitness)
     
@@ -127,7 +127,7 @@ def main():
     real_stage_matrix = ga.real_successors(new_netlist,real_and_nodes_sorted,lo_nodes,po_nodes)
     print("real_stage_matrix:",real_stage_matrix)
     
-    fit = ga.fitness_function(real_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping)
+    fit = ga.fitness_function(real_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping,model)
     print("===========================================")
     print("origin_fitness:",origin_fit)
     print("fit:",fit)
