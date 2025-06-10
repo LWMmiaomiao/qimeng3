@@ -1,0 +1,91 @@
+diff --git a/ap_utils/geneticalgorithm.py b/ap_utils/geneticalgorithm.py
+index 0e18a38..387bd5d 100644
+--- a/ap_utils/geneticalgorithm.py
++++ b/ap_utils/geneticalgorithm.py
+@@ -239,14 +239,14 @@ def calculate_rms(deta_s, lo_nodes,li_lo_mapping,and_nodes_sorted):
+     
+     return np.sqrt(average_sum/len(lo_nodes))
+ 
+-def fitness_function(stage_matrix, longest_paths, and_nodes_sorted, lo_nodes, po_nodes, li_nodes,lo_mapping,po_mapping,li_lo_mapping):
++def fitness_function(stage_matrix, longest_paths, and_nodes_sorted, lo_nodes, po_nodes, li_nodes,lo_mapping,po_mapping,li_lo_mapping,model):
+     max_scpl, deta_s, scpl = calculate_deta_s_and_scpl(stage_matrix, longest_paths, and_nodes_sorted, lo_nodes, po_nodes,lo_mapping,po_mapping)
+     rms = calculate_rms(deta_s,lo_nodes,li_lo_mapping,and_nodes_sorted)
+     
+     print("####")
+     print("max_scpl:", max_scpl)
+     print("rms:", rms)
+-    fitness = max_scpl * rms #model.predict(max_scpl) * model.predict(rms)
++    fitness = (model.predict(np.array([[max_scpl]]))[0]) * (model.predict(np.array([[rms]]))[0])
+     print("fitness:", fitness)
+     
+     return fitness
+@@ -258,9 +258,9 @@ def xgboost_train():
+ 
+     # 创建模型（关键参数配置）
+     model = xgb.XGBRegressor(
+-        max_depth=1,        # 限制树复杂度
++        max_depth=5,        # 限制树复杂度
+         n_estimators=50,    # 增加树的数量
+-        learning_rate=0.3,  # 提高学习率
++        learning_rate=1.0,  # 提高学习率
+         objective='reg:squarederror'
+     )
+ 
+@@ -367,7 +367,7 @@ def mutation(individual, mutation_rate, num_stages):
+     individual[mutation_mask, 0] = np.random.randint(0, num_stages, mutation_mask.sum())
+     return individual
+ 
+-def genetic_algorithm(netlist,and_nodes_sorted, lo_nodes, po_nodes, li_nodes, longest_paths,lo_mapping,po_mapping,stage_matrix,li_lo_mapping,num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size):
++def genetic_algorithm(netlist,and_nodes_sorted, lo_nodes, po_nodes, li_nodes, longest_paths,lo_mapping,po_mapping,stage_matrix,li_lo_mapping,num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size,model):
+     
+     population = generate_initial_population(population_size,netlist, and_nodes_sorted, lo_nodes, po_nodes,stage_matrix)
+     best_individual = None
+@@ -376,7 +376,7 @@ def genetic_algorithm(netlist,and_nodes_sorted, lo_nodes, po_nodes, li_nodes, lo
+     for generation in tqdm(range(num_generations), desc="Genetic Algorithm Progress"):
+         fitnesses = []
+         for ind in population:
+-            f = fitness_function(ind, longest_paths, and_nodes_sorted, lo_nodes, po_nodes, li_nodes,lo_mapping,po_mapping,li_lo_mapping)
++            f = fitness_function(ind, longest_paths, and_nodes_sorted, lo_nodes, po_nodes, li_nodes,lo_mapping,po_mapping,li_lo_mapping,model)
+             fitnesses.append(f)
+         fitnesses = np.array(fitnesses)
+         
+diff --git a/pipeline_search.py b/pipeline_search.py
+index e41890c..e294f85 100644
+--- a/pipeline_search.py
++++ b/pipeline_search.py
+@@ -39,7 +39,7 @@ def main():
+     start_time = time.time()  
+     args = parse_args()
+ 
+-    #model = ga.xgboost_train()
++    model = ga.xgboost_train()
+ 
+     # module_name = args.module_name
+     module_name = "c17"
+@@ -97,7 +97,7 @@ def main():
+     
+     psearch.stage_assignment_align_with_old(netlist,3)
+     origin_stage_matrix = ga.initialize_partition(netlist, real_and_nodes_sorted, lo_nodes, po_nodes)
+-    origin_fit = ga.fitness_function(origin_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping)
++    origin_fit = ga.fitness_function(origin_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping,model)
+     print("origin_stage_matrix:",origin_stage_matrix)
+     print("origin_fitness:",origin_fit)
+     
+@@ -106,7 +106,7 @@ def main():
+ 
+     best_solution, best_solution_fitness = ga.genetic_algorithm(new_netlist,virtual_and_nodes_sorted, lo_nodes, po_nodes, li_nodes, virtual_longest_paths,virtual_lo_mapping,
+                                                              virtual_po_mapping,stage_matrix,virtual_li_lo_mapping,
+-                                                             num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size)
++                                                             num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size, model)
+     print("best_solution:", best_solution)
+     print("best_solution_fitness:", best_solution_fitness)
+     
+@@ -127,7 +127,7 @@ def main():
+     real_stage_matrix = ga.real_successors(new_netlist,real_and_nodes_sorted,lo_nodes,po_nodes)
+     print("real_stage_matrix:",real_stage_matrix)
+     
+-    fit = ga.fitness_function(real_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping)
++    fit = ga.fitness_function(real_stage_matrix, real_longest_paths, real_and_nodes_sorted, lo_nodes, po_nodes, li_nodes,real_lo_mapping,real_po_mapping,real_li_lo_mapping,model)
+     print("===========================================")
+     print("origin_fitness:",origin_fit)
+     print("fit:",fit)

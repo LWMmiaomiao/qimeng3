@@ -76,6 +76,7 @@ def parse_args():
 
 
 def main():
+
     start_time = time.time()  
     args = parse_args()
 
@@ -85,7 +86,8 @@ def main():
     module_name = "c17"
 
     # TODO：改成自己的路径
-    rtl_path = f"./data/rtl_input_4reg/alu_mod_{module_name}.v"
+    #rtl_path = f"./data/rtl_input_4reg/alu_mod_{module_name}.v"
+    rtl_path = f"/nfs_global/I/qimeng3/guoziying/qmlib_autopipe/python/data/rtl_input_4reg/alu_mod_{module_name}.v"
     netlist = r_parsor.rtl2netlist(
                 rtl_path=rtl_path,
                 clock_name="clk",
@@ -95,23 +97,32 @@ def main():
                 draw_netlist=True,
             )
     original_netlist = copy.deepcopy(netlist)
-    
+
+    # 对原始网表的每个节点，设置阶段为-1，并设置网表阶段数为1
     for node in original_netlist.graph.nodes():
         original_netlist.graph.nodes[node]["stage"] = -1
     original_netlist.n_stages = 1
+
     netlist.reset()
+    # 生成随机输入序列
     pi_fifo = [
             [random.choice([1, 0]) for i in range(netlist.PI_num)] for n in range(1000)
         ]
+    # 保存PO和LO输出作为金标准
     golde_po, golden_lo = eval.execute_original_netlist(original_netlist, pi_fifo)
     netlist.reset()
     
-    stage_dict = process_main(netlist)
+    stage_dict = process_main(netlist) #process_main
     for node_id , stage in stage_dict.items():
         netlist.set_stage(node_id,stage)
         
     netlist.determine_ctrl_io_id()
     netlist.calculate_stage_IO_info()
+    print("==========================================================")
+    for stage_id in range(netlist.n_stages):
+        print(f"Stage {stage_id} LI: {netlist.stage_LI_list[stage_id]}")
+        print(f"Stage {stage_id} LO: {netlist.stage_LO_list[stage_id]}")
+    print("==========================================================")
 
     partition_test = {}
     for node in netlist.graph.nodes:

@@ -357,7 +357,7 @@ def mutation(individual, mutation_rate, num_stages):
     individual[mutation_mask, 0] = np.random.randint(0, num_stages, mutation_mask.sum())
     return individual
 
-def genetic_algorithm(netlist,and_nodes_sorted, lo_nodes, po_nodes, li_nodes, longest_paths,lo_mapping,po_mapping,stage_matrix,li_lo_mapping,num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size,model):
+def genetic_algorithm(netlist,and_nodes_sorted, lo_nodes, po_nodes, li_nodes, longest_paths,lo_mapping,po_mapping,stage_matrix,li_lo_mapping,num_stages, population_size, num_generations, crossover_rate, mutation_rate, tournament_size):
     
     population = generate_initial_population(population_size,netlist, and_nodes_sorted, lo_nodes, po_nodes,stage_matrix)
     best_individual = None
@@ -366,7 +366,7 @@ def genetic_algorithm(netlist,and_nodes_sorted, lo_nodes, po_nodes, li_nodes, lo
     for generation in tqdm(range(num_generations), desc="Genetic Algorithm Progress"):
         fitnesses = []
         for ind in population:
-            f , _= fitness_function(ind, longest_paths, and_nodes_sorted, lo_nodes, po_nodes, li_nodes,lo_mapping,po_mapping,li_lo_mapping,model)
+            f , _= fitness_function(ind, longest_paths, and_nodes_sorted, lo_nodes, po_nodes, li_nodes,lo_mapping,po_mapping,li_lo_mapping)
             fitnesses.append(f)
         fitnesses = np.array(fitnesses)
         
@@ -466,6 +466,7 @@ def assign_nodes(netlist, real_stage_matrix, real_and_nodes_sorted, lo_nodes, po
         stage = real_stage_matrix[idx, 0]  
         level_dict[node] = max_scpl * stage  
     
+    #获取其所有前驱节点，并找出前驱节点中最大的层级.该节点的层级为这个最大层级加1（表示增加一个逻辑门延迟）。
     for node in remaining_nodes:
         predecessors = netlist.get_predecessors(node)
         max_predecessor_level = max([level_dict[pred] for pred in predecessors if pred in level_dict], default=0)
@@ -475,7 +476,7 @@ def assign_nodes(netlist, real_stage_matrix, real_and_nodes_sorted, lo_nodes, po
     for node, level in level_dict.items():
         stage = int(level // max_scpl)  
         stage_dict[node] = stage        
-    return stage_dict
+    return stage_dict #节点到阶段的映射字典
 
 
 def process_main(netlist):
