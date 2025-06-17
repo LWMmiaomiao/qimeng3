@@ -22,6 +22,8 @@ import ap_utils.netlist as nl
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor
 import argparse
+from xgboost import XGBRegressor
+#import xgboost as xgb
 
 def process_main(netlist):
     args = parse_args()
@@ -74,18 +76,73 @@ def parse_args():
     parser.add_argument("--tournament_size", type=int, default=15, help="Tournament selection size")
     return parser.parse_args()
 
+#[TODO]增加random_stage_assignment extract_features train_xgboost_model
+def random_stage_assignment(netlist, n_stages=3):
+    netlist.n_stages = n_stages    
+    # 重置所有节点阶段
+    for node in netlist.graph.nodes:
+        if netlist.get_type(node) in ["AND", "PO", "LO"]:
+            netlist.graph.nodes[node]["stage"] = -1
+    # 随机分配阶段
+    # 这部分存在问题，完全随机分配导致后续字典报错
+    for node in netlist.graph.nodes:
+        node_type = netlist.get_type(node)
+        if node_type in ["AND", "PO", "LO"]:
+            stage = random.randint(0, n_stages-1)
+            netlist.set_stage(node, stage)
+    
+    # 更新依赖信息
+    netlist.determine_ctrl_io_id()
+    netlist.calculate_stage_IO_info()
+    return netlist
+
+def extract_features(netlist): #目前：提取netlist中LI和LO流水级分配情况
+    features = {}
+    
+    # 提取LI信息
+    for io_id, li_node in netlist.LI_id.items():
+        stage = netlist.get_stage(li_node)
+        features[f"LI_{io_id}_stage"] = stage
+        
+    # 提取LO信息
+    for io_id, lo_node in netlist.LO_id.items():
+        stage = netlist.get_stage(lo_node)
+        features[f"LO_{io_id}_stage"] = stage
+
+    return features
+
+def train_xgboost_model(df):
+    """训练XGBoost回归模型"""
+    # 分离特征和标签
+    X = df.drop("CPI", axis=1)
+    y = df["CPI"]
+    
+    # 训练模型
+    model = XGBRegressor(
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    )
+    
+    model.fit(X, y)
+    return model
 
 def main():
+
     start_time = time.time()  
     args = parse_args()
 
-    model = ga.xgboost_train()
+    #model = ga.xgboost_train()
 
     # module_name = args.module_name
     module_name = "c17"
 
     # TODO：改成自己的路径
-    rtl_path = f"./data/rtl_input_4reg/alu_mod_{module_name}.v"
+    #rtl_path = f"./data/rtl_input_4reg/alu_mod_{module_name}.v"
+    rtl_path = f"/nfs_global/I/qimeng3/guoziying/qmlib_autopipe/python/data/rtl_input_4reg/alu_mod_{module_name}.v"
     netlist = r_parsor.rtl2netlist(
                 rtl_path=rtl_path,
                 clock_name="clk",
@@ -96,22 +153,80 @@ def main():
             )
     original_netlist = copy.deepcopy(netlist)
     
+    # 对原始网表的每个节点，设置阶段为-1，并设置网表阶段数为1
     for node in original_netlist.graph.nodes():
         original_netlist.graph.nodes[node]["stage"] = -1
     original_netlist.n_stages = 1
+
     netlist.reset()
+    # 生成随机输入序列
     pi_fifo = [
             [random.choice([1, 0]) for i in range(netlist.PI_num)] for n in range(1000)
         ]
+    # 保存PO和LO输出作为金标准
     golde_po, golden_lo = eval.execute_original_netlist(original_netlist, pi_fifo)
     netlist.reset()
+
+    #[TODO]对原始网表进行多次随机阶段分配并计算CPI
+    training_data = []
+    num_samples = 100  # 样本数量，根据需要调整
+    for _ in range(num_samples):
+        netlist_copy = copy.deepcopy(original_netlist)
+        # 随机分配阶段
+        randomized_netlist = random_stage_assignment(netlist_copy, args.num_stages)
+
+        # 提取LI和LO特征
+        features = extract_features(randomized_netlist)
+
+        # 执行网表计算CPI
+        ppl_po, ppl_lo, cycles = eval.execute_pipelined_netlist(randomized_netlist, pi_fifo)
+        cpi = cycles / 1000
+        # 添加到训练数据集
+        training_data.append({
+            "features": features,
+            "cpi": cpi
+        })
+
+    #[TODO]训练xgboost
+    X = []
+    y = []
+    for sample in training_data:
+        X.append(sample["features"])
+        y.append(sample["cpi"])
+    df = pd.DataFrame(X) # 将特征转换为DataFrame（一行）
+    df["CPI"] = y
+    model = train_xgboost_model(df)
     
-    stage_dict = process_main(netlist)
+    # 保存模型
+    model.save_model("cpi_predictor.model")
+    
+    # 打印特征重要性
+    importance = pd.DataFrame({
+        "feature": model.feature_names_in_,
+        "importance": model.feature_importances_
+    }).sort_values("importance", ascending=False)
+    print("==========================================================")
+    print("特征重要性:")
+    print(importance.head(10))
+    print("==========================================================")
+    #end TODO
+
+
+
+    
+    netlist.reset()
+    
+    stage_dict = process_main(netlist) #process_main
     for node_id , stage in stage_dict.items():
         netlist.set_stage(node_id,stage)
         
     netlist.determine_ctrl_io_id()
     netlist.calculate_stage_IO_info()
+    print("==========================================================")
+    for stage_id in range(netlist.n_stages):
+        print(f"Stage {stage_id} LI: {netlist.stage_LI_list[stage_id]}")
+        print(f"Stage {stage_id} LO: {netlist.stage_LO_list[stage_id]}")
+    print("==========================================================")
 
     partition_test = {}
     for node in netlist.graph.nodes:
